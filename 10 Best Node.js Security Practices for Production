@@ -1,0 +1,207 @@
+10 Best Node.js Security Practices for Production
+A practical production security guide for Node.js and Express applications
+Production security should be implemented as a defense-in-depth strategy across application code, APIs, authentication, dependencies, infrastructure, and monitoring.
+1. Keep Node.js and Dependencies Updated
+Use a supported Node.js LTS release and regularly scan and update dependencies.
+Example commands:
+node -v
+npm outdated
+npm audit
+npm audit fix
+For Yarn:
+yarn outdated
+yarn audit
+Best practices:
+• Use an actively supported Node.js version.
+• Remove unused dependencies.
+• Review security advisories before upgrades.
+• Commit lock files such as package-lock.json or yarn.lock.
+• Automate dependency scanning in CI/CD.
+Why it matters: Vulnerable third-party packages can become a major attack surface.
+
+
+2. Never Hard-Code Secrets
+Never place passwords, API keys, JWT secrets, or database credentials directly in source code.
+Avoid:
+const jwtSecret = "my-super-secret-key";
+Use environment variables:
+const jwtSecret = process.env.JWT_SECRET;
+const databaseUrl = process.env.DATABASE_URL;
+Example .env:
+JWT_SECRET=very-long-random-secret
+DATABASE_URL=mongodb://...
+Add environment files to .gitignore:
+.env
+.env.*
+!.env.example
+For production, prefer a dedicated secrets manager such as AWS Secrets Manager or Parameter Store.
+
+
+3. Implement Strong Authentication and Authorization
+Authentication establishes who the user is; authorization determines what the user is allowed to do.
+JWT example:
+const token = jwt.sign(
+  { userId: user.id, role: user.role },
+  process.env.JWT_SECRET!,
+  { expiresIn: "15m" }
+);
+Production recommendations:
+• Use short-lived access tokens.
+• Implement a secure refresh-token strategy.
+• Apply role-based access control (RBAC).
+• Hash passwords with Argon2id or bcrypt.
+• Use MFA for sensitive operations.
+• Never trust authorization data supplied directly by the client.
+
+
+4. Validate and Sanitize User Input
+Never assume incoming request data is safe. Validate body, query, path parameters, headers, and uploaded data.
+Joi example:
+const schema = Joi.object({
+  firstName: Joi.string().trim().min(2).max(50).required(),
+  email: Joi.string().email().required(),
+  age: Joi.number().integer().min(18)
+});
+Then validate before processing:
+const { error, value } = schema.validate(req.body);
+Input validation helps protect against malformed requests, injection attacks, unexpected data types, and excessively large inputs.
+
+
+5. Protect Against SQL and NoSQL Injection
+Avoid constructing database queries from untrusted input.
+For MongoDB, validate types and prevent clients from supplying unexpected operators such as $ne, $gt, or $where.
+For SQL, use parameterized queries:
+await db.query(
+  "SELECT * FROM users WHERE email = $1",
+  [email]
+);
+Never build SQL using string concatenation:
+`SELECT * FROM users WHERE email = '${email}'`
+Use an ORM/query builder carefully and validate the application's business inputs.
+
+
+6. Secure HTTP Headers
+For Express applications, use Helmet to configure security-related HTTP headers.
+Install:
+npm install helmet
+Usage:
+import helmet from "helmet";
+app.use(helmet());
+Also disable Express fingerprinting:
+app.disable("x-powered-by");
+Security headers can help with protections involving Content Security Policy, content sniffing, HSTS, referrer policy, and other browser security controls.
+
+
+7. Configure CORS Properly
+Avoid unrestricted CORS in production.
+Avoid:
+app.use(cors({ origin: "*" }));
+Prefer an explicit allow-list:
+const allowedOrigins = [
+  "https://app.example.com",
+  "https://staging.example.com"
+];
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  }
+}));
+Important: CORS is not an authentication mechanism. It mainly controls browser cross-origin access.
+
+
+8. Add Rate Limiting
+Protect login, OTP, password-reset, payment, and other abuse-prone endpoints.
+Install:
+npm install express-rate-limit
+Example:
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: { message: "Too many login attempts" }
+});
+app.use("/api/auth/login", loginLimiter);
+For multiple Node.js instances, use a shared store such as Redis so rate limits are consistent across instances.
+
+
+9. Use HTTPS and Secure Cookies
+Production APIs should use HTTPS, typically terminated at an Nginx reverse proxy, load balancer, or API gateway.
+For authentication cookies:
+res.cookie("refreshToken", token, {
+  httpOnly: true,
+  secure: true,
+  sameSite: "strict",
+  maxAge: 7 * 24 * 60 * 60 * 1000
+});
+Important attributes:
+• HttpOnly — reduces JavaScript access to the cookie.
+• Secure — sends the cookie only over HTTPS.
+• SameSite — helps mitigate CSRF in appropriate architectures.
+• Appropriate expiration — limits exposure if a token is compromised.
+
+
+10. Logging, Monitoring, and Error Handling
+Security requires visibility into failures and suspicious behavior.
+Avoid logging sensitive values such as passwords, JWTs, API keys, database credentials, payment information, and session cookies.
+Prefer structured logs:
+logger.error({
+  requestId,
+  route: req.originalUrl,
+  method: req.method,
+  statusCode: 500,
+  errorCode: "DB_CONNECTION_ERROR"
+});
+A typical production monitoring flow is:
+Node.js → Winston/Pino → CloudWatch Logs → Metric Filters → Metrics → CloudWatch Alarms → SNS/Email
+Useful alert categories include repeated authentication failures, database errors, payment failures, rate-limit events, and excessive 5xx responses.
+Production Security Checklist
+☐ Supported Node.js version
+☐ Dependencies regularly scanned and updated
+☐ No secrets committed to Git
+☐ .env excluded from Git
+☐ Strong authentication and authorization
+☐ Password hashing implemented
+☐ Input validation
+☐ SQL/NoSQL injection protection
+☐ Helmet/security headers
+☐ Strict CORS allow-list
+☐ Rate limiting
+☐ HTTPS
+☐ Secure cookie configuration
+☐ Request size limits
+☐ Safe error handling
+☐ Sensitive data removed from logs
+☐ Centralized logging
+☐ Monitoring and alerting
+☐ Restricted database access
+☐ Least-privilege infrastructure permissions
+☐ Security testing integrated into CI/CD
+Recommended Production Architecture
+Client / Web / Mobile
+        │
+      HTTPS
+        │
+        ▼
+Nginx / Load Balancer / API Gateway
+        │
+        ▼
+Node.js API
+ ├── Helmet
+ ├── CORS
+ ├── Rate Limiting
+ ├── Authentication / JWT
+ ├── Authorization / RBAC
+ └── Input Validation
+        │
+   ┌────┴───────────┐
+   ▼                ▼
+Database          Redis
+        │
+        ▼
+Logging & Monitoring
+ └── CloudWatch / Alerts / SNS / Email
